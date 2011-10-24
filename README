@@ -1,0 +1,13 @@
+
+  esperuino - sketch for arduino ATMega328.
+
+It makes a Board computer from arduino using OBDI (ALDL) Car interface.
+
+Hardware:
+
+ - Arduino Nano V3.0 (ATMega328p)
+ - LCD 20x4 character display module
+ - 3-pin IR receiver (for Remote Control)
+ - IR remote control (any spare, should be sniffed for codes)
+ - npn transistor (for LCD backlight control)
+ - L9637D ISO-to-Serial adapter chip
