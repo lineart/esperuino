@@ -15,8 +15,8 @@
 // include the library code:
 #include <LiquidCrystal.h>
 #include <EEPROM.h>
-//#include <Time.h>
-//#include <TimeAlarms.h>
+#include <Time.h>
+#include <TimeAlarms.h>
 #include <IRremote.h>
 
 // Time constants
@@ -133,6 +133,7 @@
 #define SIZE   60    // response data lenght
 #define RESPLEN 5    // index of MSG LENGTH in response
 
+
 // Engine Parameters
 #define INJ_PERF 0.1 // Injector Performance (l/min)
 
@@ -170,13 +171,22 @@
 #define UPD      500UL
 #define CAN_UPDATE  millis() - timeStamp > UPD
 
-// UI constants
+// UI Menus
 #define CATSIZE 3
-char *categories[]  = {"Date & Time", "Display", "Car"};
-byte menuSize[]     = {5, 1, 2};
+byte menuSize[] = {5, 1, 2};
+
+byte  category; // position of category
+char *catText[]  = {"Date & Time", "Display", "Car"}; // Textual representation
+byte  menu[CATSIZE]; 
 char *menuText[][5] = { {"Hour", "Minute", "Day", "Month", "Year"},
                         {"Brightness"},
                         {"Injector Perf", "Odometer",} };
+
+//int menuSet[][5] = { { &setHour, &setMinute, &setDay, &setMonth, &setYear },
+//                     { &setBright },
+//                     { &setInjPerf, &setOdo } };
+
+
 
 #define TEST
 //=============== VARIABLES DECLARATION ===================
@@ -186,7 +196,6 @@ IRrecv irrecv(IRPIN);  // Init IR receiver
 decode_results irCode; // define IR result storage
 
 byte cache, data[SIZE], brightness;
-byte menu[CATSIZE], category;
 
 boolean start, confMode, categoryActive, menuActive;
 
@@ -197,20 +206,35 @@ double fuel, tripDistance, tripConsump, oldConsump;
 
 int oldSpeed, cnt;
 
+
 //===== SETUP =====
 void setup() {
+  byte ch1[] = {0x0, 0x3, 0x7, 0xf, 0xf, 0x1f, 0x1f, 0x1f};
+  byte ch2[] = {0, 24, 28, 30, 30, 0x1f, 0x1f, 0x1f};
+  byte ch3[] = {31, 31, 31, 15, 15, 7, 3, 0};
+  byte ch4[] = {31, 31, 31, 30, 30, 28, 24, 0};
+  byte ch5[] = {31, 31, 31, 31, 31, 0, 0, 0};
+  byte ch6[] = {0, 0, 0, 31, 31, 31, 31, 31};
+  lcd.createChar(0, ch1);
+  lcd.createChar(1, ch2);
+  lcd.createChar(2, ch3);
+  lcd.createChar(3, ch4);
+  lcd.createChar(4, ch5);
+  lcd.createChar(5, ch6);
   
   lcd.begin(LCDSIZE); // set up the LCD's number of columns and rows 
   irrecv.enableIRIn(); // Start the receiver
 
+  // Loading params from EEPROM
   brightness = EEPROM.read(R_BLIGHT);
-  
   odometer   = EEPROM.read(ODO3)*16777216 + EEPROM.read(ODO2)*65536 + EEPROM.read(ODO1)*256 + EEPROM.read(ODO0); 
   fuel       = EEPROM.read(R_FUEL)*0.2;
   
+  // Set LCD backlight
   pinMode(BLIGHT, OUTPUT);
   analogWrite(BLIGHT, BRIGHTNESS);
   
+  // Init vars
   start = confMode = categoryActive = menuActive = false;
   category = 0;
   for (byte i = 0; i < CATSIZE; i++)
@@ -225,7 +249,6 @@ void setup() {
   oldConsump = 0;
 
   Serial.begin(ECU_SPD);
-
 }
 
 //===== LOOP =====
@@ -263,6 +286,8 @@ void loop() {
       
       timeStamp = millis();
     }
+    lcd.setCursor(D_TIME);
+    timeDisplay(0);
   }
 
 
@@ -308,7 +333,8 @@ void irControl() {
 
 void showCategory() {
   if (irCode.value == CHP) category++; 
-  if (irCode.value == CHM) category--; 
+  if (irCode.value == CHM) category--;
+  if (category < 0 || category >= CATSIZE) category = 0;
   printCategory();
   if (irCode.value == PP) {
     categoryActive = true;
@@ -318,23 +344,20 @@ void showCategory() {
 void showMenu() {
   if (irCode.value == CHP) menu[category]++; 
   if (irCode.value == CHM) menu[category]--; 
+  if (menu[category] < 0 || menu[category] >= menuSize[category]) menu[category] = 0;
   printMenu();
   if (irCode.value == PP) {
     menuActive = true;
   } 
 }
 
-void setParam() {
-  lcd.print(menu[category], DEC);
-}
-
 void printCategory () {
   lcd.print("Settings");
   int shift = -1;
   if (category <= 0) {
-    shift = 0;
-  } else if (category >= CATSIZE -1) {
-    shift = -2;
+    shift++;
+  } else if (category >= CATSIZE -1 && CATSIZE > 2) {
+    shift--;
   } 
   for (byte i = 0; i < 3; i++) {
     if (category + shift +i >= CATSIZE) break;
@@ -343,17 +366,17 @@ void printCategory () {
       lcd.print("* ");
     else
       lcd.print("  ");
-    lcd.print(categories[category + shift +i]);
+    lcd.print(catText[category + shift +i]);
   }
 }
 
 void printMenu() {
-  lcd.print(categories[category]);
+  lcd.print(catText[category]);
   int shift = -1;
   if (menu[category] <= 0) {
-    shift = 0;
-  } else if (menu[category] >= menuSize[category] -1) {
-    shift = -2;
+    shift++;
+  } else if (menu[category] >= menuSize[category] -1 && menuSize[category] > 2) {
+    shift--;
   } 
   for (byte i = 0; i < 3; i++) {
     if (menu[category] + shift +i >= menuSize[category]) break;
@@ -366,7 +389,47 @@ void printMenu() {
   }
 }
 
-
+void setParam() {
+  lcd.print(menuText[category][menu[category]]);
+  lcd.print(" - ");
+  switch (category) {
+    case 0:
+      switch (menu[category]) {
+        case 0:
+          if (irCode.value == PLUS) setTime((hour()+1)%24, minute(), second(), day(), month(), year());
+          if (irCode.value == MINUS) setTime((hour()-1)%24, minute(), second(), day(), month(), year());
+          lcd.print(hour()); break;
+        case 1:
+          if (irCode.value == PLUS) setTime(hour(), (minute()+1)%60, 0, day(), month(), year());
+          if (irCode.value == MINUS) setTime(hour(), (minute()-1)%60, 0, day(), month(), year());
+          lcd.print(minute()); break;
+        case 2:
+          if (irCode.value == PLUS) setTime(hour(), minute(), second(), day()%31+1, month(), year());
+          if (irCode.value == MINUS) setTime(hour(), minute(), second(), day()%31-1, month(), year());
+          lcd.print(day()); break;
+        case 3:
+          if (irCode.value == PLUS) setTime(hour(), minute(), second(), day(), month()%12+1, year());
+          if (irCode.value == MINUS) setTime(hour(), minute(), second(), day(), month()%12-1, year());
+          lcd.print(month()); break;
+        case 4:
+          if (irCode.value == PLUS) setTime(hour(), minute(), second(), day(), month(), year()+1);
+          if (irCode.value == MINUS) setTime(hour(), minute(), second(), day(), month(), year()-1);
+          lcd.print(year()); break;
+      } break;
+    case 1:
+      switch (menu[category]) {
+        case 0:
+          lcd.print(BRIGHTNESS); break;
+      } break;
+    case 2:
+      switch (menu[category]) {
+        case 0:
+          lcd.print(INJ_PERF); break;
+        case 1:
+          lcd.print(odometer); break;
+      } break;
+  }
+}
 
 void talkToECU() {
   // Sending REQUEST to ECU
@@ -392,6 +455,7 @@ void talkToECU() {
 }
 
 void sendECUrequest() {
+  Serial.flush();
   Serial.write(REQ_MSG_ID);
   Serial.write(REQ_MSG_LEN);
   Serial.write(REQ_MODE_NUM);
@@ -402,6 +466,29 @@ void test() {
   start = true;
   for(short i = 0; i < SIZE; ++i)
     data[i] = 123;
+}
+
+void timeDisplay(boolean date) {
+  // digital clock display of the time
+  if (! date) {
+    lcd.print(hour());
+    printMinSec(minute());
+    printMinSec(second());
+  } else {
+    lcd.print(day());
+    lcd.print(" ");
+    lcd.print(month());
+    lcd.print(" ");
+    lcd.print(year());
+  }
+}
+
+void printMinSec(int digits){
+  // utility function for digital clock display: prints preceding colon and leading 0
+  lcd.print(":");
+  if(digits < 10)
+    lcd.print('0');
+  lcd.print(digits);
 }
 
 void printDecAt(long data, short col, short row, short len) {
@@ -456,22 +543,22 @@ void block(byte x) {
 void bigDigit(int d, int disp) {
   switch(d) {
     case 0:
-      lcd.setCursor(disp*4, 0); block(7);
+      lcd.setCursor(disp*4, 0); lcd.write(0x0); lcd.write(0xFF); lcd.write(0x1);
       lcd.setCursor(disp*4, 1); block(5);
       lcd.setCursor(disp*4, 2); block(5);
-      lcd.setCursor(disp*4, 3); block(7);
+      lcd.setCursor(disp*4, 3); lcd.write(0x2); lcd.write(0xFF); lcd.write(0x3);
       break;
     case 1:
-      lcd.setCursor(disp*4, 0); block(3);
+      lcd.setCursor(disp*4, 0); lcd.write(0x0); lcd.write(0xFF); lcd.print(" ");
       lcd.setCursor(disp*4, 1); block(2);
       lcd.setCursor(disp*4, 2); block(2);
-      lcd.setCursor(disp*4, 3); block(7);
+      lcd.setCursor(disp*4, 3); lcd.write(0x5); lcd.write(0xFF); lcd.write(0x5);
       break;
     case 2:
-      lcd.setCursor(disp*4, 0); block(7);
-      lcd.setCursor(disp*4, 1); block(4);
-      lcd.setCursor(disp*4, 2); block(1);
-      lcd.setCursor(disp*4, 3); block(7);
+      lcd.setCursor(disp*4, 0); lcd.write(0x0); lcd.write(0xFF); lcd.write(0x1);
+      lcd.setCursor(disp*4, 1); lcd.write(0x4); lcd.print(" "); lcd.write(0xFF);
+      lcd.setCursor(disp*4, 2); lcd.write(0x0); lcd.write(0xFF); lcd.write(0x3);
+      lcd.setCursor(disp*4, 3); lcd.write(0xFF); lcd.write(0x5); lcd.write(0x5);
       break;
     case 3:
       lcd.setCursor(disp*4, 0); block(7);
@@ -522,3 +609,6 @@ void bigDigit(int d, int disp) {
       lcd.setCursor(disp*4, 3); block(0);
   }
 }
+
+
+
