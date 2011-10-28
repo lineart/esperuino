@@ -332,8 +332,8 @@ void irControl() {
 }
 
 void showCategory() {
-  if (irCode.value == CHP) category++; 
-  if (irCode.value == CHM) category--;
+  if (irCode.value == FWD) category++; 
+  if (irCode.value == REW) category--;
   if (category < 0 || category >= CATSIZE) category = 0;
   printCategory();
   if (irCode.value == PP) {
@@ -342,8 +342,8 @@ void showCategory() {
 }
 
 void showMenu() {
-  if (irCode.value == CHP) menu[category]++; 
-  if (irCode.value == CHM) menu[category]--; 
+  if (irCode.value == FWD) menu[category]++; 
+  if (irCode.value == REW) menu[category]--; 
   if (menu[category] < 0 || menu[category] >= menuSize[category]) menu[category] = 0;
   printMenu();
   if (irCode.value == PP) {
@@ -455,7 +455,6 @@ void talkToECU() {
 }
 
 void sendECUrequest() {
-  Serial.flush();
   Serial.write(REQ_MSG_ID);
   Serial.write(REQ_MSG_LEN);
   Serial.write(REQ_MODE_NUM);
@@ -464,21 +463,24 @@ void sendECUrequest() {
 
 void test() {
   start = true;
-  for(short i = 0; i < SIZE; ++i)
-    data[i] = 123;
+  if (CAN_UPDATE) {
+    for(short i = 0; i < SIZE; ++i)
+      data[i] = data[i]+1;
+  }
 }
 
 void timeDisplay(boolean date) {
   // digital clock display of the time
   if (! date) {
+    if(hour()<10) lcd.print("0");
     lcd.print(hour());
     printMinSec(minute());
     printMinSec(second());
   } else {
     lcd.print(day());
-    lcd.print(" ");
+    lcd.print("/");
     lcd.print(month());
-    lcd.print(" ");
+    lcd.print("/");
     lcd.print(year());
   }
 }
@@ -524,90 +526,113 @@ void printHexAt(byte data, short col, short row, short len) {
 }
 
 void bigNum(int n) {
-  if (n < 10) { bigDigit(10, 0); bigDigit(10,1); bigDigit(n, 2); }
-  else if (n < 100) { bigDigit(10, 0); bigDigit(n/10,1); bigDigit(n%10, 2); }
-  else { bigDigit(n/100, 0); bigDigit(n%100/10,1); bigDigit(n%10, 2); }
-}
+  byte mtx[ROWS][9];
+  for (byte i = 0; i<ROWS; ++i)
+    for (byte j = 0; j<9; ++j)
+      mtx[i][j] = 0x20;
 
-void block(byte x) {
-  for (int i = 3; i > 0; --i) {
-    if (x & 1)
-      lcd.write(0xff);
-    else
+  if (n < 10) { bigDigit(n, 3, mtx); }
+  else if (n < 100) { bigDigit(n/10, 1, mtx); bigDigit(n%10, 5, mtx); }
+  else { bigDigit(n/100, 0, mtx); bigDigit(n%100/10, 3, mtx); bigDigit(n%10, 6, mtx); }
 
-      lcd.print(" ");
-    x = x >> 1;
+  for (byte i = 0; i<ROWS; ++i) {
+    lcd.setCursor(0, i);
+    for (byte j = 0; j<9; ++j)
+      lcd.write(mtx[i][j]);
   }
 }
 
-void bigDigit(int d, int disp) {
+byte bigDigit(int d, int disp, byte mtx[][9]) {
+  byte s = 3;
+  byte m[ROWS][3];
   switch(d) {
     case 0:
-      lcd.setCursor(disp*4, 0); lcd.write(0x0); lcd.write(0xFF); lcd.write(0x1);
-      lcd.setCursor(disp*4, 1); block(5);
-      lcd.setCursor(disp*4, 2); block(5);
-      lcd.setCursor(disp*4, 3); lcd.write(0x2); lcd.write(0xFF); lcd.write(0x3);
+      m = {
+        {0x00, 0x04, 0x01},
+        {0xff, 0x20, 0xff},
+        {0xff, 0x20, 0xff},
+        {0x02, 0x05, 0x03}
+      };
       break;
     case 1:
-      lcd.setCursor(disp*4, 0); lcd.write(0x0); lcd.write(0xFF); lcd.print(" ");
-      lcd.setCursor(disp*4, 1); block(2);
-      lcd.setCursor(disp*4, 2); block(2);
-      lcd.setCursor(disp*4, 3); lcd.write(0x5); lcd.write(0xFF); lcd.write(0x5);
+      //s = 1;
+      m = {
+        {0x20, 0x00, 0x20},
+        {0x20, 0xff, 0x20},
+        {0x20, 0xff, 0x20},
+        {0x20, 0xff, 0x20}
+      };
       break;
     case 2:
-      lcd.setCursor(disp*4, 0); lcd.write(0x0); lcd.write(0xFF); lcd.write(0x1);
-      lcd.setCursor(disp*4, 1); lcd.write(0x4); lcd.print(" "); lcd.write(0xFF);
-      lcd.setCursor(disp*4, 2); lcd.write(0x0); lcd.write(0xFF); lcd.write(0x3);
-      lcd.setCursor(disp*4, 3); lcd.write(0xFF); lcd.write(0x5); lcd.write(0x5);
+      m = {
+        {0x00, 0x04, 0x01},
+        {0x04, 0x20, 0xff},
+        {0x20, 0x00, 0x03},
+        {0x00, 0xff, 0x05}
+      };
       break;
     case 3:
-      lcd.setCursor(disp*4, 0); block(7);
-      lcd.setCursor(disp*4, 1); block(2);
-      lcd.setCursor(disp*4, 2); block(4);
-      lcd.setCursor(disp*4, 3); block(7);
+      m = {
+        {0x00, 0x04, 0x01},
+        {0x20, 0x05, 0x03},
+        {0x20, 0x20, 0x01},
+        {0x02, 0x05, 0x03}
+      };
       break;
     case 4:
-      lcd.setCursor(disp*4, 0); block(5);
-      lcd.setCursor(disp*4, 1); block(5);
-      lcd.setCursor(disp*4, 2); block(7);
-      lcd.setCursor(disp*4, 3); block(4);
+      m = {
+        {0x01, 0x20, 0x00},
+        {0xff, 0x20, 0xff},
+        {0x04, 0x04, 0xff},
+        {0x20, 0x20, 0x02}
+      };
       break;
     case 5:
-      lcd.setCursor(disp*4, 0); block(7);
-      lcd.setCursor(disp*4, 1); block(1);
-      lcd.setCursor(disp*4, 2); block(4);
-      lcd.setCursor(disp*4, 3); block(7);
+      m = {
+        {0xff, 0x04, 0x04},
+        {0xff, 0x04, 0x01},
+        {0x20, 0x20, 0xff},
+        {0x02, 0x05, 0x03}
+      };
       break;
     case 6:
-      lcd.setCursor(disp*4, 0); block(1);
-      lcd.setCursor(disp*4, 1); block(7);
-      lcd.setCursor(disp*4, 2); block(5);
-      lcd.setCursor(disp*4, 3); block(7);
+      m = {
+        {0x00, 0x04, 0x01},
+        {0xff, 0x04, 0x01},
+        {0xff, 0x20, 0xff},
+        {0x02, 0x05, 0x03}
+      };
       break;
     case 7:
-      lcd.setCursor(disp*4, 0); block(7);
-      lcd.setCursor(disp*4, 1); block(4);
-      lcd.setCursor(disp*4, 2); block(2);
-      lcd.setCursor(disp*4, 3); block(1);
+      m = {
+        {0xff, 0x04, 0xff},
+        {0x20, 0x20, 0xff},
+        {0x20, 0x20, 0xff},
+        {0x20, 0x20, 0x02}
+      };
       break;
     case 8:
-      lcd.setCursor(disp*4, 0); block(5);
-      lcd.setCursor(disp*4, 1); block(7);
-      lcd.setCursor(disp*4, 2); block(5);
-      lcd.setCursor(disp*4, 3); block(7);
+      m = {
+        {0x00, 0x04, 0x01},
+        {0x02, 0x05, 0x03},
+        {0x00, 0x20, 0x01},
+        {0x02, 0x05, 0x03}
+      };
       break;
     case 9:
-      lcd.setCursor(disp*4, 0); block(7);
-      lcd.setCursor(disp*4, 1); block(5);
-      lcd.setCursor(disp*4, 2); block(7);
-      lcd.setCursor(disp*4, 3); block(4);
+      m = {
+        {0x00, 0x04, 0x01},
+        {0xff, 0x20, 0xff},
+        {0x02, 0x05, 0xff},
+        {0x02, 0x05, 0x03}
+      };
       break;
-    default:
-      lcd.setCursor(disp*4, 0); block(0);
-      lcd.setCursor(disp*4, 1); block(0);
-      lcd.setCursor(disp*4, 2); block(0);
-      lcd.setCursor(disp*4, 3); block(0);
+    //default:
   }
+  for (byte i = 0; i<ROWS; ++i)
+    for (byte j = 0; j<s; ++j)
+      mtx[i][disp+j] = m[i][j];
+
 }
 
 
