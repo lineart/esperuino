@@ -171,7 +171,10 @@
 #define UPD      500UL
 #define CAN_UPDATE  millis() - timeStamp > UPD
 
-// UI Menus
+// UI and Menus
+#define BIGD_AREA 9
+#define BIGD_SIZE 3
+
 #define CATSIZE 3
 byte menuSize[] = {5, 1, 2};
 
@@ -526,25 +529,25 @@ void printHexAt(byte data, short col, short row, short len) {
 }
 
 void bigNum(int n) {
-  byte mtx[ROWS][9];
-  for (byte i = 0; i<ROWS; ++i)
-    for (byte j = 0; j<9; ++j)
+  byte mtx[ROWS][BIGD_AREA];
+  for (byte i = 0; i < ROWS; ++i)
+    for (byte j = 0; j < BIGD_AREA; ++j)
       mtx[i][j] = 0x20;
 
   if (n < 10) { bigDigit(n, 3, mtx); }
   else if (n < 100) { bigDigit(n/10, 1, mtx); bigDigit(n%10, 5, mtx); }
   else { bigDigit(n/100, 0, mtx); bigDigit(n%100/10, 3, mtx); bigDigit(n%10, 6, mtx); }
 
-  for (byte i = 0; i<ROWS; ++i) {
+  for (byte i = 0; i < ROWS; ++i) {
     lcd.setCursor(0, i);
-    for (byte j = 0; j<9; ++j)
+    for (byte j = 0; j < BIGD_AREA; ++j)
       lcd.write(mtx[i][j]);
   }
 }
 
-byte bigDigit(int d, int disp, byte mtx[][9]) {
-  byte s = 3;
-  byte m[ROWS][3];
+byte bigDigit(int d, int disp, byte mtx[][BIGD_AREA]) {
+  byte s = BIGD_SIZE;
+  byte m[ROWS][BIGD_SIZE];
   switch(d) {
     case 0:
       m = {
@@ -629,8 +632,8 @@ byte bigDigit(int d, int disp, byte mtx[][9]) {
       break;
     //default:
   }
-  for (byte i = 0; i<ROWS; ++i)
-    for (byte j = 0; j<s; ++j)
+  for (byte i = 0; i < ROWS; ++i)
+    for (byte j = 0; j < s; ++j)
       mtx[i][disp+j] = m[i][j];
 
 }
