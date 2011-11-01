@@ -176,16 +176,16 @@
 #define BIGD_SIZE 3
 
 #define CATSIZE 3
-byte menuSize[] = {5, 1, 3};
 
 byte  category; // position of category
-char *catText[]  = {"Date & Time", "Display", "Car"}; // Textual representation
 byte  menu[CATSIZE]; 
+byte  menuSize[] = {5, 1, 3};
+char *catText[]  = {"Date & Time", "Display", "Car"}; // Textual representation
 char *menuText[][5] = { {"Hour", "Minute", "Day", "Month", "Year"},
-                        {"Brightness"},
-                        {"Fuel Level", "Injector Perf", "Odometer",} };
+                                {"Brightness"},
+                                {"Fuel Level", "Injector Perf", "Odometer",} };
 
-#define TEST
+//#define TEST
 //=============== VARIABLES DECLARATION ===================
 LiquidCrystal lcd(RS, EN, D1, D2, D3, D4); // initialize the LCD with the numbers of the interface pins
 
@@ -246,13 +246,16 @@ void loop() {
   test();      // Make fake ECU response
   #endif
 
-  if (! start) { tripStamp  = millis(); return; } // If engine OFF - skip the rest ======================================
+  if (! start) { tripStamp  = millis(); }//return; } // If engine OFF - skip the rest ======================================
   
-  tripDistance += (double) (oldSpeed + SPEED)*1000/2 * (millis()-tripStamp)/HOUR;
-  tripConsump  += (double) (oldConsump + FUEL_CONSUMP_LPH)/2 * (millis()-tripStamp)/HOUR;
-  odometer += (double) (oldSpeed + SPEED)*1000/2 * (millis()-tripStamp)/HOUR;
-  fuel -= (double) (oldConsump + FUEL_CONSUMP_LPH)/2 * (millis()-tripStamp)/HOUR;
+  double distDelta = (double) (oldSpeed + SPEED)*1000/2 * (millis()-tripStamp)/HOUR;
+  double consDelta = (double) (oldConsump + FUEL_CONSUMP_LPH)/2 * (millis()-tripStamp)/HOUR;
   tripStamp  = millis();
+  
+  tripDistance += distDelta;
+  tripConsump  += consDelta;
+  odometer     += distDelta;
+  fuel         -= consDelta;
     
   oldSpeed   = SPEED;
   oldConsump = FUEL_CONSUMP_LPH;
@@ -643,12 +646,12 @@ byte bigDigit(int d, int disp, byte mtx[][BIGD_AREA]) {
         mtx[i][disp+j] = m[i][j];
 }
 
- byte ch1[] = {0, 3, 7, 15, 15, 31, 31, 31};
- byte ch2[] = {0, 24, 28, 30, 30, 31, 31, 31};
- byte ch3[] = {31, 31, 31, 15, 15, 7, 3, 0};
- byte ch4[] = {31, 31, 31, 30, 30, 28, 24, 0};
- byte ch5[] = {31, 31, 31, 31, 31, 0, 0, 0};
- byte ch6[] = {0, 0, 0, 31, 31, 31, 31, 31};
+byte ch1[] = {0, 3, 7, 15, 15, 31, 31, 31};
+byte ch2[] = {0, 24, 28, 30, 30, 31, 31, 31};
+byte ch3[] = {31, 31, 31, 15, 15, 7, 3, 0};
+byte ch4[] = {31, 31, 31, 30, 30, 28, 24, 0};
+byte ch5[] = {31, 31, 31, 31, 31, 0, 0, 0};
+byte ch6[] = {0, 0, 0, 31, 31, 31, 31, 31};
 
 void lcdSetup() {
   lcd.createChar(0, ch1);
@@ -657,7 +660,6 @@ void lcdSetup() {
   lcd.createChar(3, ch4);
   lcd.createChar(4, ch5);
   lcd.createChar(5, ch6);
-  
   lcd.begin(LCDSIZE); // set up the LCD's number of columns and rows 
 }
 
