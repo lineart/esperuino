@@ -246,19 +246,19 @@ void loop() {
   test();      // Make fake ECU response
   #endif
 
-  if (! start) { tripStamp  = millis(); }//return; } // If engine OFF - skip the rest ======================================
-  
-  double distDelta = (double) (oldSpeed + SPEED)*1000/2 * (millis()-tripStamp)/HOUR;
-  double consDelta = (double) (oldConsump + FUEL_CONSUMP_LPH)/2 * (millis()-tripStamp)/HOUR;
-  tripStamp  = millis();
-  
-  tripDistance += distDelta;
-  tripConsump  += consDelta;
-  odometer     += distDelta;
-  fuel         -= consDelta;
+  if (start) {
+    double distDelta = (double) (oldSpeed + SPEED)*1000/2 * (millis()-tripStamp)/HOUR;
+    double consDelta = (double) (oldConsump + FUEL_CONSUMP_LPH)/2 * (millis()-tripStamp)/HOUR;
+    tripStamp  = millis();
     
-  oldSpeed   = SPEED;
-  oldConsump = FUEL_CONSUMP_LPH;
+    tripDistance += distDelta;
+    tripConsump  += consDelta;
+    odometer     += distDelta;
+    fuel         -= consDelta;
+    
+    oldSpeed   = SPEED;
+    oldConsump = FUEL_CONSUMP_LPH;
+  } else { tripStamp  = millis(); } // If engine OFF
 
   if (! confMode) {
     if (CAN_UPDATE) {
