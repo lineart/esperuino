@@ -147,11 +147,11 @@
 #define ECU_SPD  8192
 
 // Display regions:     COL,        ROW, LENGTH 
-#define D_START         12
-#define D_TIME          D_START,    3
-#define D_RPM           D_START,    0, 4
+#define D_START         10
+#define D_TIME          D_START+5,  3
+#define D_TEMP          D_START,    0, 4
 #define D_CONSUMP       D_START,    1, 4
-#define D_TRIP_CONSUMP  D_START+4,  1, 4
+#define D_TRIP_CONSUMP  D_START+5,  1, 4
 #define D_TRIP_DIST     D_START,    2, 8
 #define D_DBG           D_START,    2
 
@@ -176,20 +176,14 @@
 #define BIGD_SIZE 3
 
 #define CATSIZE 3
-byte menuSize[] = {5, 1, 2};
+byte menuSize[] = {5, 1, 3};
 
 byte  category; // position of category
 char *catText[]  = {"Date & Time", "Display", "Car"}; // Textual representation
 byte  menu[CATSIZE]; 
 char *menuText[][5] = { {"Hour", "Minute", "Day", "Month", "Year"},
                         {"Brightness"},
-                        {"Injector Perf", "Odometer",} };
-
-//int menuSet[][5] = { { &setHour, &setMinute, &setDay, &setMonth, &setYear },
-//                     { &setBright },
-//                     { &setInjPerf, &setOdo } };
-
-
+                        {"Fuel Level", "Injector Perf", "Odometer",} };
 
 #define TEST
 //=============== VARIABLES DECLARATION ===================
@@ -200,32 +194,20 @@ decode_results irCode; // define IR result storage
 
 byte cache, data[SIZE], brightness;
 
-boolean start, confMode, categoryActive, menuActive;
+boolean start, running, confMode, categoryActive, menuActive;
 
 unsigned long odometer, timeStamp, reqStamp;
 unsigned long tripStamp;
 
 double fuel, tripDistance, tripConsump, oldConsump;
 
-int oldSpeed, cnt;
+unsigned int oldSpeed, cnt;
 
 
 //===== SETUP =====
 void setup() {
-  byte ch1[] = {0x0, 0x3, 0x7, 0xf, 0xf, 0x1f, 0x1f, 0x1f};
-  byte ch2[] = {0, 24, 28, 30, 30, 0x1f, 0x1f, 0x1f};
-  byte ch3[] = {31, 31, 31, 15, 15, 7, 3, 0};
-  byte ch4[] = {31, 31, 31, 30, 30, 28, 24, 0};
-  byte ch5[] = {31, 31, 31, 31, 31, 0, 0, 0};
-  byte ch6[] = {0, 0, 0, 31, 31, 31, 31, 31};
-  lcd.createChar(0, ch1);
-  lcd.createChar(1, ch2);
-  lcd.createChar(2, ch3);
-  lcd.createChar(3, ch4);
-  lcd.createChar(4, ch5);
-  lcd.createChar(5, ch6);
+  lcdSetup(); // Create custom chars & init LCD
   
-  lcd.begin(LCDSIZE); // set up the LCD's number of columns and rows 
   irrecv.enableIRIn(); // Start the receiver
 
   // Loading params from EEPROM
@@ -238,7 +220,7 @@ void setup() {
   analogWrite(BLIGHT, BRIGHTNESS);
   
   // Init vars
-  start = confMode = categoryActive = menuActive = false;
+  start = running = confMode = categoryActive = menuActive = false;
   category = 0;
   for (byte i = 0; i < CATSIZE; i++)
     menu[i] = 0;
@@ -264,10 +246,12 @@ void loop() {
   test();      // Make fake ECU response
   #endif
 
-  if (! start) return; // If engine OFF - skip the rest ======================================
+  if (! start) { tripStamp  = millis(); return; } // If engine OFF - skip the rest ======================================
   
   tripDistance += (double) (oldSpeed + SPEED)*1000/2 * (millis()-tripStamp)/HOUR;
   tripConsump  += (double) (oldConsump + FUEL_CONSUMP_LPH)/2 * (millis()-tripStamp)/HOUR;
+  odometer += (double) (oldSpeed + SPEED)*1000/2 * (millis()-tripStamp)/HOUR;
+  fuel -= (double) (oldConsump + FUEL_CONSUMP_LPH)/2 * (millis()-tripStamp)/HOUR;
   tripStamp  = millis();
     
   oldSpeed   = SPEED;
@@ -282,15 +266,15 @@ void loop() {
       else 
         printDoubleAt( FUEL_CONSUMP_LPKM, D_CONSUMP );
   
-      printDecAt( TEMP_COOLANT, D_START, 0, 3 );    
-      printDecAt( RPM, D_START + 4, 0, 4 );    
-      printDoubleAt( tripConsump, D_TRIP_CONSUMP );    
-      printDecAt( tripDistance, D_TRIP_DIST );    
+      printDecAt( TEMP_COOLANT, D_START, 0, 3 ); lcd.write(223);
+      printDoubleAt( fuel, D_START + 5, 0, 4 ); lcd.print("L");    
+      printDoubleAt( tripConsump, D_TRIP_CONSUMP ); lcd.print("L");
+      printDoubleAt( tripDistance/1000.0, D_TRIP_DIST ); lcd.print("km");
+      lcd.setCursor(D_TIME);
+      timeDisplay(0);
       
       timeStamp = millis();
     }
-    lcd.setCursor(D_TIME);
-    timeDisplay(0);
   }
 
 
@@ -328,8 +312,10 @@ void irControl() {
         brightness--;
         analogWrite(BLIGHT, BRIGHTNESS);
       }
+      if (irCode.value == PP) {
+        lcdSetup();
+      }
     }
-    
     irrecv.resume(); // Receive the next value
   }  
 }
@@ -426,9 +412,28 @@ void setParam() {
       } break;
     case 2:
       switch (menu[category]) {
-        case 0:
+        case 0: // Fuel Level
+          if (irCode.value == PLUS) fuel += 0.5;
+          if (irCode.value == MINUS) fuel -= 0.5;
+          lcd.print(fuel); break;
+        case 1: // Inj Perf
+          if (irCode.value == PLUS) fuel += 0.05;
+          if (irCode.value == MINUS) fuel -= 0.05;
           lcd.print(INJ_PERF); break;
-        case 1:
+        case 2: // Odometer
+          if (irCode.value == PLUS) odometer += 100;
+          if (irCode.value == MINUS) odometer -= 100;
+          if (irCode.value == REL) odometer = 0;
+          if (irCode.value == RD0) odometer *= 10;
+          if (irCode.value == RD1) { odometer *= 10; odometer += 1; }
+          if (irCode.value == RD2) { odometer *= 10; odometer += 2; }
+          if (irCode.value == RD3) { odometer *= 10; odometer += 3; }
+          if (irCode.value == RD4) { odometer *= 10; odometer += 4; }
+          if (irCode.value == RD5) { odometer *= 10; odometer += 5; }
+          if (irCode.value == RD6) { odometer *= 10; odometer += 6; }
+          if (irCode.value == RD7) { odometer *= 10; odometer += 7; }
+          if (irCode.value == RD8) { odometer *= 10; odometer += 8; }
+          if (irCode.value == RD9) { odometer *= 10; odometer += 9; }
           lcd.print(odometer); break;
       } break;
   }
@@ -469,7 +474,9 @@ void test() {
   if (CAN_UPDATE) {
     for(short i = 0; i < SIZE; ++i)
       data[i] = data[i]+1;
-  }
+    lcd.setCursor(D_DBG);
+    lcd.write(SPEED);
+  }  
 }
 
 void timeDisplay(boolean date) {
@@ -477,8 +484,12 @@ void timeDisplay(boolean date) {
   if (! date) {
     if(hour()<10) lcd.print("0");
     lcd.print(hour());
-    printMinSec(minute());
-    printMinSec(second());
+    lcd.print(":");
+    if(minute() < 10) lcd.print('0');
+    lcd.print(minute());
+//    lcd.print(":");
+//    if(second() < 10) lcd.print('0');
+//    lcd.print(second());
   } else {
     lcd.print(day());
     lcd.print("/");
@@ -486,14 +497,6 @@ void timeDisplay(boolean date) {
     lcd.print("/");
     lcd.print(year());
   }
-}
-
-void printMinSec(int digits){
-  // utility function for digital clock display: prints preceding colon and leading 0
-  lcd.print(":");
-  if(digits < 10)
-    lcd.print('0');
-  lcd.print(digits);
 }
 
 void printDecAt(long data, short col, short row, short len) {
@@ -536,13 +539,15 @@ void bigNum(int n) {
 
   if (n < 10) { bigDigit(n, 3, mtx); }
   else if (n < 100) { bigDigit(n/10, 1, mtx); bigDigit(n%10, 5, mtx); }
+  else if (n < 200) { bigDigit(n/100, -1, mtx); bigDigit(n%100/10, 2, mtx); bigDigit(n%10, 6, mtx); }
   else { bigDigit(n/100, 0, mtx); bigDigit(n%100/10, 3, mtx); bigDigit(n%10, 6, mtx); }
-
+  
   for (byte i = 0; i < ROWS; ++i) {
     lcd.setCursor(0, i);
     for (byte j = 0; j < BIGD_AREA; ++j)
       lcd.write(mtx[i][j]);
   }
+
 }
 
 byte bigDigit(int d, int disp, byte mtx[][BIGD_AREA]) {
@@ -634,9 +639,26 @@ byte bigDigit(int d, int disp, byte mtx[][BIGD_AREA]) {
   }
   for (byte i = 0; i < ROWS; ++i)
     for (byte j = 0; j < s; ++j)
-      mtx[i][disp+j] = m[i][j];
-
+      if (disp+j >= 0)
+        mtx[i][disp+j] = m[i][j];
 }
 
+ byte ch1[] = {0, 3, 7, 15, 15, 31, 31, 31};
+ byte ch2[] = {0, 24, 28, 30, 30, 31, 31, 31};
+ byte ch3[] = {31, 31, 31, 15, 15, 7, 3, 0};
+ byte ch4[] = {31, 31, 31, 30, 30, 28, 24, 0};
+ byte ch5[] = {31, 31, 31, 31, 31, 0, 0, 0};
+ byte ch6[] = {0, 0, 0, 31, 31, 31, 31, 31};
+
+void lcdSetup() {
+  lcd.createChar(0, ch1);
+  lcd.createChar(1, ch2);
+  lcd.createChar(2, ch3);
+  lcd.createChar(3, ch4);
+  lcd.createChar(4, ch5);
+  lcd.createChar(5, ch6);
+  
+  lcd.begin(LCDSIZE); // set up the LCD's number of columns and rows 
+}
 
 
