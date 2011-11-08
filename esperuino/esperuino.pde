@@ -138,8 +138,8 @@
 #define INJ_PERF 0.1 // Injector Performance (l/min)
 
 // Parameters definitions macros
-#define FUEL_CONSUMP_LPH   (double) INJ_PULSE * 4 * RPM * 1.667e-5 * INJ_PERF * 60 // per hour
-#define FUEL_CONSUMP_LPKM  (double) FUEL_CONSUMP_LPH / SPEED * 100  // per 100km
+#define FUEL_CONSUMP_LPH   (float) INJ_PULSE * 4 * RPM * 1.667e-5 * INJ_PERF * 60 // per hour
+#define FUEL_CONSUMP_LPKM  (float) FUEL_CONSUMP_LPH / SPEED * 100  // per 100km
 
 #define BRIGHTNESS  (byte) pow(2, brightness%9) -1  // LCD Backlight brightness (0-255)
 
@@ -196,10 +196,10 @@ byte cache, data[SIZE], brightness;
 
 boolean start, running, confMode, categoryActive, menuActive;
 
-unsigned long odometer, timeStamp, reqStamp;
+unsigned long timeStamp, reqStamp;
 unsigned long tripStamp;
 
-double fuel, tripDistance, tripConsump, oldConsump;
+float fuel, odometer, tripDistance, tripConsump, oldConsump;
 
 unsigned int oldSpeed, cnt;
 
@@ -246,22 +246,18 @@ void loop() {
   test();      // Make fake ECU response
   #endif
 
-  if (start) {
-    double distDelta = (double) (oldSpeed + SPEED)*1000/2 * (millis()-tripStamp)/HOUR;
-    double consDelta = (double) (oldConsump + FUEL_CONSUMP_LPH)/2 * (millis()-tripStamp)/HOUR;
-    tripStamp  = millis();
-    
-    tripDistance += distDelta;
-    tripConsump  += consDelta;
-    odometer     += distDelta;
-    fuel         -= consDelta;
-    
-    oldSpeed   = SPEED;
-    oldConsump = FUEL_CONSUMP_LPH;
-  } else { tripStamp  = millis(); } // If engine OFF
-
   if (! confMode) {
     if (CAN_UPDATE) {
+      displayInfo();
+    }
+  }
+
+
+}
+// ======================================================
+
+
+void displayInfo() {
       bigNum( SPEED );      
 
       if ( SPEED < 40 )
@@ -270,20 +266,14 @@ void loop() {
         printDoubleAt( FUEL_CONSUMP_LPKM, D_CONSUMP );
   
       printDecAt( TEMP_COOLANT, D_START, 0, 3 ); lcd.write(223);
-      printDoubleAt( fuel, D_START + 5, 0, 4 ); lcd.print("L");    
+      printDoubleAt( fuel, D_START+5, 0, 4 ); lcd.print("L");    
       printDoubleAt( tripConsump, D_TRIP_CONSUMP ); lcd.print("L");
       printDoubleAt( tripDistance/1000.0, D_TRIP_DIST ); lcd.print("km");
       lcd.setCursor(D_TIME);
       timeDisplay(0);
       
       timeStamp = millis();
-    }
-  }
-
-
 }
-// ======================================================
-
 
 void irControl() {
   if (irrecv.decode(&irCode)) {
@@ -416,8 +406,9 @@ void setParam() {
     case 2:
       switch (menu[category]) {
         case 0: // Fuel Level
-          if (irCode.value == PLUS) fuel += 0.5;
+          if (irCode.value == PLUS)  fuel += 0.5;
           if (irCode.value == MINUS) fuel -= 0.5;
+          if (irCode.value == PP)    EEPROM.write(R_FUEL, (byte) (fuel*5));
           lcd.print(fuel); break;
         case 1: // Inj Perf
           if (irCode.value == PLUS) fuel += 0.05;
@@ -437,6 +428,12 @@ void setParam() {
           if (irCode.value == RD7) { odometer *= 10; odometer += 7; }
           if (irCode.value == RD8) { odometer *= 10; odometer += 8; }
           if (irCode.value == RD9) { odometer *= 10; odometer += 9; }
+          if (irCode.value == PP)  { 
+            EEPROM.write(ODO3, (byte) odometer/16777216);
+            EEPROM.write(ODO2, (byte) odometer%16777216/65536);
+            EEPROM.write(ODO1, (byte) odometer%16777216%65536/256);
+            EEPROM.write(ODO0, (byte) odometer%16777216%65536%256);
+          } 
           lcd.print(odometer); break;
       } break;
   }
@@ -448,6 +445,20 @@ void talkToECU() {
     sendECUrequest();
     reqStamp = millis()/REQ_DLY;
     cnt = 0; // reset response byte index
+
+    if (start) { // Count params
+      float distDelta = (float) (oldSpeed + SPEED)*1000/2 * (millis()-tripStamp)/HOUR;
+      float consDelta = (float) (oldConsump + FUEL_CONSUMP_LPH)/2 * (millis()-tripStamp)/HOUR;
+      tripStamp  = millis();
+      
+      tripDistance += distDelta;
+      tripConsump  += consDelta;
+      odometer     += distDelta;
+      fuel         -= consDelta;
+      
+      oldSpeed   = SPEED;
+      oldConsump = FUEL_CONSUMP_LPH;
+    } else { tripStamp  = millis(); } // If engine OFF
   }
 
   // Reading ECU response
